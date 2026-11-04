@@ -22,6 +22,12 @@
 #    .\stm32cubeide-dap.ps1 -Mode erase                          # 整片擦除
 #    .\stm32cubeide-dap.ps1 -Mode dump -DumpFile .\readback.bin  # 整片读回
 #
+#    # 复位方式（默认 sysresetreq，不需要接线）
+#    .\stm32cubeide-dap.ps1 -Mode flash -Image app.elf -Reset sysresetreq   # 软件复位
+#    .\stm32cubeide-dap.ps1 -Mode flash -Image app.elf -Reset srst          # 硬件复位脚(需接NRST)
+#    .\stm32cubeide-dap.ps1 -Mode flash -Image app.elf -Reset vectreset     # 只复位内核
+#    .\stm32cubeide-dap.ps1 -Mode flash -Image app.elf -Reset none          # 不复位
+#
 #    .\stm32cubeide-dap.ps1 -Mode status    # 只看状态，不做任何动作
 #    .\stm32cubeide-dap.ps1 -Mode attach    # 只挂载
 #    .\stm32cubeide-dap.ps1 -Mode detach
@@ -42,6 +48,10 @@ param(
     [switch]$Run,                      # 烧录后立即运行
     [switch]$NoVerify,                 # 跳过校验（默认校验）
     [switch]$ChipErase,                # 烧录前整片擦除
+
+    # ------------------------------ 复位方式 ------------------------------
+    [ValidateSet('sysresetreq', 'srst', 'vectreset', 'none')]
+    [string]$Reset = 'sysresetreq',    # sysresetreq=软复位(无需接线) / srst=硬件复位脚 / vectreset=只复位内核 / none=不复位
 
     # ------------------------------ 回读相关 ------------------------------
     [string]$DumpFile,                 # 回读输出路径，默认 .\flash_dump.bin
@@ -158,14 +168,47 @@ function To-OcdPath([string]$p) {
     return ($p -replace '\\', '/')
 }
 
+function Get-ResetArgs {
+    <#
+      复位方式说明（都在 init 之前下发，属于配置期命令）：
+
+      sysresetreq  软件复位：写 AIRCR.SYSRESETREQ，芯片自己走一遍复位流程。
+                   **不需要任何接线**，是默认值。
+      srst         硬件复位：拉低 nRESET/NRST 脚。需要在固件里把
+                   PIN_nRESET(默认 GPIO13) 接到目标板 NRST 上，否则不生效。
+                   srst_nogate 表示不复位时也让 JTAG/SWD 保持可用。
+      vectreset    只复位 Cortex-M 内核（VECTRESET），外设不复位。
+                   适用于"外设已经初始化好、只想重启内核"的场景。
+      none         完全不复位：烧完只做 halt 或 resume，保持现场。
+    #>
+    param()
+    switch ($Reset) {
+        'srst' {
+            return @('reset_config srst_only srst_nogate', 'cortex_m reset_config srst')
+        }
+        'vectreset' {
+            return @('cortex_m reset_config vectreset')
+        }
+        'none' {
+            return @()
+        }
+        default {   # sysresetreq
+            return @('cortex_m reset_config sysresetreq')
+        }
+    }
+}
+
 function Get-OcdArgs {
-    return @(
+    $a = @(
         '-s', $Scripts,
         '-f', 'interface/cmsis-dap.cfg',
         '-c', "cmsis-dap vid_pid $DapVid $DapPid",
         '-f', "target/$Target.cfg",
         '-c', "adapter speed $Speed"
     )
+    # 复位配置必须放在 target 之后（要先有 target 对象）、init 之前
+    foreach ($c in (Get-ResetArgs)) { $a += @('-c', $c) }
+    return $a
 }
 
 function Invoke-Ocd {
@@ -282,16 +325,15 @@ switch ($Mode) {
         Write-Host "  GDB    : localhost:3333"
         Write-Host "  Telnet : localhost:4444"
         Write-Host "  目标   : $Target @ ${Speed} kHz"
+        Write-Host "  复位   : $Reset"
         Write-Host "  退出   : Ctrl+C"
         Write-Host "==================================================" -ForegroundColor Cyan
         Write-Host ""
 
-        & $OpenOcd -s $Scripts `
-            -f "interface/cmsis-dap.cfg" `
-            -c "cmsis-dap vid_pid $DapVid $DapPid" `
-            -f "target/$Target.cfg" `
-            -c "adapter speed $Speed" `
-            -c "gdb_port 3333" -c "telnet_port 4444" -c "tcl_port 6666"
+        # 把复位方式一并传给 OpenOCD，CubeIDE 里的 reset 也会按这个来
+        $argv = Get-OcdArgs
+        $argv += @('-c', 'gdb_port 3333', '-c', 'telnet_port 4444', '-c', 'tcl_port 6666')
+        & $OpenOcd @argv
         exit $LASTEXITCODE
     }
 
@@ -344,8 +386,14 @@ switch ($Mode) {
             else { $cmds += "verify_image {$ocdPath}" }
         }
 
-        if ($Run) { Info "烧录后复位并运行"; $cmds += 'reset run' }
-        else { Info "烧录后停在 halt"; $cmds += 'reset halt' }
+        # 收尾动作取决于 -Reset
+        if ($Reset -eq 'none') {
+            if ($Run) { Info "不复位，直接继续运行（resume）"; $cmds += 'resume' }
+            else      { Info "不复位，保持 halt";                $cmds += 'halt' }
+        } else {
+            if ($Run) { Info "烧录后复位并运行（reset $Reset）"; $cmds += 'reset run' }
+            else      { Info "烧录后复位并停在 halt（reset $Reset）"; $cmds += 'reset halt' }
+        }
         $cmds += 'shutdown'
 
         if ($DryRun) { Show-OcdPlan $cmds; exit 0 }
@@ -356,7 +404,7 @@ switch ($Mode) {
 
         $bad = ($out -match '(?m)^Error') -or ($out -match 'failed')
         if ($bad) { Err "烧录失败（见上方 OpenOCD 输出）"; exit 1 }
-        if ($Run) { Ok "烧录完成，目标已运行" } else { Ok "烧录完成，目标停在复位后 halt 状态" }
+        if ($Run) { Ok "烧录完成，目标已运行" } else { Ok "烧录完成，目标停在 halt 状态" }
         exit 0
     }
 
