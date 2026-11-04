@@ -187,13 +187,20 @@ function Get-ResetArgs {
             return @('reset_config srst_only srst_nogate', 'cortex_m reset_config srst')
         }
         'vectreset' {
-            return @('cortex_m reset_config vectreset')
+            # reset_config none：adapter 层完全不碰 SRST，纯内核复位
+            return @('reset_config none', 'cortex_m reset_config vectreset')
         }
         'none' {
-            return @()
+            return @('reset_config none')
         }
         default {   # sysresetreq
-            return @('cortex_m reset_config sysresetreq')
+            # reset_config none 很关键：OpenOCD 的 reset 分两层，
+            # adapter 层（SRST 脚）+ core 层（SYSRESETREQ）。
+            # adapter 默认是 srst_only，所以即使选了 sysresetreq，
+            # OpenOCD 也会顺手拉复位脚 —— 一旦把 nRESET 接上，
+            # 这个副作用就真的生效，行为变得依赖目标板的复位电路。
+            # 明确关掉，保证 sysresetreq 是"纯软件复位、不碰任何脚"。
+            return @('reset_config none', 'cortex_m reset_config sysresetreq')
         }
     }
 }
