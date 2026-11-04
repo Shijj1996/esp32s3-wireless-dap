@@ -7,17 +7,18 @@
 #        OpenOCD / 脚本 / GDB 全部自动从 STM32CubeIDE 安装目录里找。
 #
 #  用法：
-#    .\stm32cubeide-dap.ps1                 # status + attach（默认）
-#    .\stm32cubeide-dap.ps1 -Mode serve     # 启动 OpenOCD，GDB 在 :3333
+#    .\stm32cubeide-dap.ps1                 # 【一条命令】检测 → 挂载 → 启动 OpenOCD
+#    .\stm32cubeide-dap.ps1 -Target stm32f1x -Speed 300
+#    .\stm32cubeide-dap.ps1 -Mode status    # 只看状态，不做任何动作
+#    .\stm32cubeide-dap.ps1 -Mode attach    # 只挂载
 #    .\stm32cubeide-dap.ps1 -Mode flash -Elf .\Debug\app.elf
 #    .\stm32cubeide-dap.ps1 -Mode detach
-#    .\stm32cubeide-dap.ps1 -Mode serve -Target stm32f1x -Speed 500
 #    .\stm32cubeide-dap.ps1 -Mode targets
 # ============================================================================
 
 param(
     [ValidateSet('status', 'attach', 'serve', 'flash', 'detach', 'targets')]
-    [string]$Mode = 'attach',
+    [string]$Mode = 'serve',
 
     [string]$Target  = 'stm32f1x',
     [int]   $Speed   = 300,
@@ -134,9 +135,13 @@ switch ($Mode) {
     }
 
     'detach' {
-        Info "detach ..."
-        & $UsbipCli detach -p 0 2>&1 | ForEach-Object { "    $_" }
-        Ok "已卸载"
+        # usbip 的 -p 取值是 1..255，不能写 0；从 "Port 01:" 里解析真实端口号
+        $num = 1
+        $line = & $UsbipCli port 2>&1 | Select-String -Pattern 'Port\s+(\d+)' | Select-Object -First 1
+        if ($line -and $line.Matches.Count -gt 0) { $num = [int]$line.Matches[0].Groups[1].Value }
+        Info "detach 端口 $num ..."
+        & $UsbipCli detach -p $num 2>&1 | ForEach-Object { "    $_" }
+        if ($LASTEXITCODE -eq 0) { Ok "已卸载" } else { Err "卸载失败（退出码 $LASTEXITCODE）" }
     }
 
     'serve' {
@@ -151,17 +156,34 @@ switch ($Mode) {
             exit 1
         }
 
-        Info "启动 OpenOCD（cmsis-dap / $Target / ${Speed}kHz）..."
-        Write-Host "    GDB   : localhost:3333"
-        Write-Host "    Telnet: localhost:4444"
-        Write-Host "    退出：Ctrl+C"
+        # 防重复启动：端口被占说明已经有一个 OpenOCD 在跑
+        foreach ($p in 3333, 4444) {
+            if (Test-NetConnection -ComputerName 127.0.0.1 -Port $p -InformationLevel Quiet -WarningAction SilentlyContinue) {
+                Err "端口 $p 已被占用 —— 可能已经有一个 OpenOCD 在运行"
+                Info "先关掉那个窗口；或换端口：-c gdb_port 3334（需要手改脚本）"
+                exit 1
+            }
+        }
+
+        $dev = Get-DapDevice | Where-Object { $_.Status -eq 'OK' } | Select-Object -First 1
+        Write-Host ""
+        Write-Host "==================================================" -ForegroundColor Cyan
+        Write-Host "  无线 DAP 已就绪" -ForegroundColor Green
+        Write-Host "--------------------------------------------------" -ForegroundColor Cyan
+        Write-Host "  设备   : $($dev.FriendlyName)"
+        Write-Host "  GDB    : localhost:3333"
+        Write-Host "  Telnet : localhost:4444"
+        Write-Host "  目标   : $Target @ ${Speed} kHz"
+        Write-Host "  退出   : Ctrl+C"
+        Write-Host "==================================================" -ForegroundColor Cyan
         Write-Host ""
 
         & $OpenOcd -s $Scripts `
             -f "interface/cmsis-dap.cfg" `
             -c "cmsis-dap vid_pid $DapVid $DapPid" `
             -f "target/$Target.cfg" `
-            -c "adapter speed $Speed"
+            -c "adapter speed $Speed" `
+            -c "gdb_port 3333" -c "telnet_port 4444" -c "tcl_port 6666"
         exit $LASTEXITCODE
     }
 
