@@ -1,10 +1,20 @@
-# 无线 CMSIS-DAP · ESP32-S3-BOX-3 移植版
+# 无线 CMSIS-DAP · ESP32-S3 移植版
+
+## 分支说明
+
+| 分支 | 对应硬件 | 说明 |
+|---|---|---|
+| `main` | —（共用基线） | 与硬件无关的改动（协议栈、工具脚本、文档）先落这里 |
+| **`S3Box`** | Waveshare **ESP32-S3-BOX-3 + Dock** | 已实测的硬件适配，引脚 SWDIO=GPIO11 / SWCLK=GPIO12 / nRESET=GPIO13 |
+| `DevKitC1`（计划） | Espressif **ESP32-S3-DevKitC-1** | 硬件到货后从 `main` 新建，主要改 `DAP_config.h` 的引脚宏 + sdkconfig 的 Flash 容量 |
+
+> 换板子要改哪些位置，见 [docs/移植说明.md](docs/移植说明.md) §3。
 
 ## 文档索引
 
 | 文档 | 内容 |
 |---|---|
-| **[docs/手动操作手册.md](docs/手动操作手册.md)** | 日常操作：usbip 挂载 → 启动 OpenOCD → CubeIDE 连接 → 脚本刷写固件 → 排障 |
+| **[docs/手动操作手册.md](docs/手动操作手册.md)** | 日常操作：usbip 挂载 → 启动 OpenOCD → CubeIDE 连接 → 烧录（elf/hex/bin）→ 擦除/回读 → 排障 |
 | **[docs/移植说明.md](docs/移植说明.md)** | 移植到 ESP32-S3 改了哪些东西 + **换 ESP32-S3-DevKitC-1 需要做什么** |
 | **[docs/另一台电脑部署.md](docs/另一台电脑部署.md)** | **在新电脑上使用**：装 usbip、开热点、挂载、烧录、排查清单 |
 | 本 README | 项目背景、编译烧录、性能与设计说明 |
