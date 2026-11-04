@@ -1,0 +1,17 @@
+# ESP-IDF 构建产物
+build/
+sdkconfig.old
+
+# 本机临时工具（旧版 usbip CLI、安装日志）
+_tools/
+
+# 上游源码参考副本（见 README 里的上游链接，不入库）
+_upstream/
+
+# IDE / 编辑器（含本机绝对路径、COM 号）
+.vscode/
+
+# 系统文件
+Thumbs.db
+desktop.ini
+.DS_Store

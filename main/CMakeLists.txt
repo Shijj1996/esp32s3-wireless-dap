@@ -1,0 +1,21 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "timer.c"
+        "tcp_server.c"
+        "usbip_server.c"
+        "DAP_handle.c"
+        "kcp_server.c"
+        "tcp_netconn.c"
+        "uart_bridge.c"
+        "wifi_handle.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        esp_wifi
+        esp_netif
+        esp_event
+        nvs_flash
+        lwip
+        esp_timer
+        driver
+)

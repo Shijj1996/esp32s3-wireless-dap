@@ -1,0 +1,62 @@
+# ESP32-S3-BOX-3 (dock / PMOD2) build defaults for wireless-esp32-dap
+#
+# Target : ESP32-S3 (QFN56, 240 MHz, 16 MB flash)
+# SWD    : SWDIO = GPIO11 (PMOD2 IO7, FSPID)
+#          SWCLK = GPIO12 (PMOD2 IO3, FSPICLK)
+#          nRESET= GPIO13 (PMOD2 IO1)
+#
+# Note: do NOT use GPIO19/20 (native USB) and avoid GPIO43/44 (UART0 / PMOD2 IO4,IO8).
+
+CONFIG_IDF_TARGET="esp32s3"
+
+# ---- Flash -------------------------------------------------------------
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASH_SAMPLE_MODE_STR=y
+
+# ---- Partition table ---------------------------------------------------
+CONFIG_PARTITION_TABLE_SINGLE_APP_LARGE=y
+CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"
+
+# ---- Console -----------------------------------------------------------
+# Native USB-Serial/JTAG: keeps GPIO43/44 free and matches the USB port
+# the board is flashed through (COM3).
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# ---- CPU / optimisation ------------------------------------------------
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_COMPILER_STACK_CHECK_MODE_NONE=y
+
+# ---- FreeRTOS / system -------------------------------------------------
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=6144
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=4096
+
+# DAP transfers run for a long time inside one task without yielding;
+# keep the watchdogs out of the way (same as upstream sdkconfig.defaults.*)
+CONFIG_ESP_INT_WDT=n
+CONFIG_ESP_TASK_WDT=n
+
+# ---- Wi-Fi / TCP tuning ------------------------------------------------
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=64
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=64
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=y
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=y
+CONFIG_ESP_WIFI_TX_BA_WIN=32
+CONFIG_ESP_WIFI_RX_BA_WIN=32
+
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=11680
+CONFIG_LWIP_TCP_WND_DEFAULT=11680
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
+CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=32
+CONFIG_LWIP_MAX_SOCKETS=10
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=4096
+
+# ---- Bluetooth off -----------------------------------------------------
+CONFIG_BT_ENABLED=n
