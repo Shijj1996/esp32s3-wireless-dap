@@ -17,7 +17,42 @@
 | **[docs/手动操作手册.md](docs/手动操作手册.md)** | 日常操作：usbip 挂载 → 启动 OpenOCD → CubeIDE 连接 → 烧录（elf/hex/bin）→ 擦除/回读 → 排障 |
 | **[docs/移植说明.md](docs/移植说明.md)** | 移植到 ESP32-S3 改了哪些东西 + **换 ESP32-S3-DevKitC-1 需要做什么** |
 | **[docs/另一台电脑部署.md](docs/另一台电脑部署.md)** | **在新电脑上使用**：装 usbip、开热点、挂载、烧录、排查清单 |
-| 本 README | 项目背景、编译烧录、性能与设计说明 |
+| 本 README | 项目背景、编译烧录、屏幕、性能与设计说明 |
+
+## 板载状态屏（BOX-3）
+
+盒子正面那块 2.4" 320x240 LCD 会实时显示运行状态，现场不看串口也能判断问题：
+
+![状态屏预览](docs/display_preview_2x.png)
+
+| 区域 | 内容 |
+|---|---|
+| 标题栏 | `WIRELESS DAP` + `BOX-3` |
+| Wi-Fi | SSID / 信道 / 信号强度 / 连接状态 |
+| 网络 | 本机 IPv4 与 USBIP 端口 |
+| USBIP | 服务状态（listening / emulating …）与客户端连接情况 |
+| DAP | 调试口类型（SWD / JTAG / OFF）与时钟模式 |
+| 系统 | 运行时长 / 堆内存 / MAC / SDK 版本 |
+| 底部状态条 | **青色 READY** / **绿色 DAP ACTIVE** / **红色 NO WIFI** |
+
+设计要点（踩过的坑都写在 `main/display.c` 注释里）：
+
+- 逐带绘制，不用整屏 framebuffer（省 150 KB 内存）
+- 面板按 RGB565 **大端**接收，推屏前必须交换高低字节
+- **必须等 DMA 传完再复用缓冲**（`on_color_trans_done` + 信号量），否则画面撕裂
+- 字库是从 esp-box 的 LVGL 字体提取的 4bpp 点阵，**没有引入 LVGL**
+- `USE_BOX3_DISPLAY` 可整体关闭（无屏板子如 DevKitC-1 置 0）
+
+### 不用烧板子就能预览布局
+
+`tools/render_preview.py` 在 PC 上用**同一套渲染算法**（解析同一份字体文件）出图：
+
+```powershell
+python .\tools\render_preview.py
+# → docs/display_preview.png / docs/display_preview_2x.png
+```
+
+改完布局先看预览，确认没问题再烧录，能省掉大量来回。
 
 ---
 
