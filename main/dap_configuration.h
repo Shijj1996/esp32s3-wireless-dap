@@ -32,6 +32,15 @@
 
 
 /**
+ * @brief 板载 LCD 状态屏（ESP32-S3-BOX-3 的 2.4" 320x240 ILI9341）
+ *
+ *        BOX-3 上显示 Wi-Fi / USBIP / DAP 的运行状态；
+ *        DevKitC-1 之类没有屏幕的板子置 0，编译时不引入显示代码。
+ */
+#define USE_BOX3_DISPLAY 1
+
+
+/**
  * @brief Specify to enable USB 3.0
  *
  */

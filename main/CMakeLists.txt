@@ -9,6 +9,8 @@ idf_component_register(
         "tcp_netconn.c"
         "uart_bridge.c"
         "wifi_handle.c"
+        "display.c"
+        "font_pingfang14.c"
     INCLUDE_DIRS "."
     REQUIRES
         esp_wifi
@@ -18,4 +20,6 @@ idf_component_register(
         lwip
         esp_timer
         driver
+        esp_lcd
+        esp_lcd_ili9341
 )

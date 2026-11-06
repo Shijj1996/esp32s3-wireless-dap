@@ -18,6 +18,8 @@
 #include "main/timer.h"
 #include "main/wifi_configuration.h"
 #include "main/wifi_handle.h"
+#include "main/display.h"
+#include "main/dap_configuration.h"
 
 #if (USE_OTA == 1)
 #include "components/corsacOTA/src/corsacOTA.h"
@@ -102,6 +104,15 @@ void app_main() {
 #if (USE_UART_BRIDGE == 1)
     uart_bridge_init();
 #endif
+
+#if (USE_BOX3_DISPLAY == 1)
+    // BOX-3 板载 LCD：尽早初始化，这样连不上热点时屏幕也能提示原因。
+    // 失败不影响主功能（DAP 照常工作）。
+    if (display_init() != ESP_OK) {
+        ESP_LOGW("main", "display init failed, continue without LCD");
+    }
+#endif
+
     wifi_init();
     DAP_Setup();
     timer_init();
