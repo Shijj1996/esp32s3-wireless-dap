@@ -101,26 +101,52 @@ function Get-DapDevice {
 }
 
 function Test-Link {
+    <#
+      注意：这里**不能**直接用 TCP 连接探测。
+
+      盒子的 TCP 服务同一时刻只服务一个客户端（listen backlog 只有 1，
+      固件里是全局的 kSock + kState）。usbip 已经挂载后再发起 TCP 连接，
+      会排在 backlog 里没人 accept，一直等到超时（约 20 秒）才失败，
+      表现为"明明连着却提示连不上"。
+
+      所以先用 ICMP 判断主机可达（不占用连接）；只有 ICMP 不通时才退回
+      TCP 探测（那时通常确实没挂载，探测是安全的）。
+    #>
+    if (Test-Connection -ComputerName $HostIp -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+        return $true
+    }
     return (Test-NetConnection -ComputerName $HostIp -Port 3240 -InformationLevel Quiet -WarningAction SilentlyContinue)
 }
 
 function Show-Status {
-    Info "探测 $HostIp : 3240 ..."
+    Info "探测 $HostIp ..."
     if (-not (Test-Link)) {
-        Warn "连不上 $HostIp:3240 —— 确认电脑热点 'ESP32-DAP' 已开启、盒子已上电并连上热点"
+        Warn "连不上 $HostIp —— 确认电脑热点 'ESP32-DAP' 已开启、盒子已上电并连上热点"
+        return $false
     }
-    Info "远端 $HostIp ..."
+    Ok "盒子在线（$HostIp）"
+
     if (-not (Test-Path $UsbipCli)) { Err "找不到 $UsbipCli"; return $false }
-    & $UsbipCli list -r $HostIp 2>&1 | ForEach-Object { "    $_" }
-    if ($LASTEXITCODE -ne 0) { return $false }
+
+    $attached = Get-DapDevice | Where-Object { $_.Status -eq 'OK' }
+
+    if ($attached) {
+        Info "设备已挂载，跳过远端枚举"
+        Write-Host "    (盒子同一时刻只服务一个 TCP 客户端，挂载期间跑 usbip list 会挂起约 20 秒)" -ForegroundColor DarkGray
+    } else {
+        Info "远端设备列表 $HostIp ..."
+        & $UsbipCli list -r $HostIp 2>&1 | ForEach-Object { Write-Host "    $_" }
+        if ($LASTEXITCODE -ne 0) { return $false }
+    }
 
     Info "本地已挂载端口："
-    & $UsbipCli port 2>&1 | ForEach-Object { "    $_" }
+    & $UsbipCli port 2>&1 | ForEach-Object { Write-Host "    $_" }
 
     $dev = Get-DapDevice
     if ($dev) {
+        Info "本机设备节点："
         $dev | Select-Object Status, Class, FriendlyName, InstanceId | Format-Table -AutoSize | Out-String |
-            ForEach-Object { $_ -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { "    $_" } }
+            ForEach-Object { $_ -split "`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-Host "    $_" } }
     } else {
         Warn "尚未看到 VID_C251 设备节点"
     }
