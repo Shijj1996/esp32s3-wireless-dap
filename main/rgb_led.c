@@ -32,9 +32,19 @@ static const char *TAG = "rgb_led";
 #define RGB_TICK_MS         50      // 刷新周期
 #define RGB_BLINK_TICKS     10      // 500ms 亮 / 500ms 灭
 #define RGB_BREATH_TICKS    40      // 2s 一个呼吸周期
+#define RGB_ACTIVE_BREATH   24      // 1.2s 一个呼吸周期（传数据时更快）
 #define RGB_ACTIVE_WINDOW   6       // 300ms 内有数据就算"正在传"
 
 static led_strip_handle_t s_strip = NULL;
+
+/* 三角波：period 个 tick 走完一个来回，峰值 max */
+static uint8_t breath(uint32_t tick, uint32_t period, uint32_t max)
+{
+    uint32_t half  = period / 2;
+    uint32_t phase = tick % period;
+    uint32_t v     = (phase < half) ? phase : (period - phase);
+    return (uint8_t)(v * max / half);
+}
 
 void rgb_led_set_rgb(uint8_t r, uint8_t g, uint8_t b)
 {
@@ -74,7 +84,7 @@ static void rgb_led_task(void *arg)
         /* 状态变化时打一条日志：不用看灯也能从串口确认状态机对不对 */
         int state = (!wifi_ok) ? 0 : (kSock < 0 ? 1 : 2);
         if (state != last_state) {
-            static const char *names[] = { "NO_WIFI(red blink)", "WAITING(blue breath)", "ATTACHED(green)" };
+            static const char *names[] = { "NO_WIFI(red blink)", "WAITING(blue breath)", "ATTACHED(green idle / cyan active)" };
             ESP_LOGI(TAG, "state -> %s  (kSock=%d)", names[state], kSock);
             last_state = state;
         }
@@ -85,19 +95,23 @@ static void rgb_led_task(void *arg)
             r = on ? 120 : 0;
         } else if (kSock < 0) {
             /* 蓝呼吸 —— 已连热点，等 PC 来挂载 */
-            uint32_t phase = tick % RGB_BREATH_TICKS;
-            uint32_t half  = RGB_BREATH_TICKS / 2;
-            uint32_t v     = (phase < half) ? phase : (RGB_BREATH_TICKS - phase);
-            b = (uint8_t)(v * 5);       // 0 .. ~95
+            b = breath(tick, RGB_BREATH_TICKS, 95);
         } else {
-            /* 已挂载 —— 绿；有数据流动时变亮 */
+            /* 已挂载：空闲绿呼吸；有数据流动时蓝绿呼吸（更快） */
             uint32_t now = g_usbip_cmd_count;
             if (now != last_cmd_count) {
                 last_cmd_count  = now;
                 last_active_tick = tick;
             }
             bool hot = (tick - last_active_tick) < RGB_ACTIVE_WINDOW;
-            g = hot ? 140 : 20;
+
+            if (hot) {
+                uint8_t v = breath(tick, RGB_ACTIVE_BREATH, 150);
+                g = v;
+                b = v;                  /* 绿 + 蓝 = 蓝绿（青） */
+            } else {
+                g = breath(tick, RGB_BREATH_TICKS, 110);
+            }
         }
 
         rgb_led_set_rgb(r, g, b);
