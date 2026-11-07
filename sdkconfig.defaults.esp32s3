@@ -1,11 +1,12 @@
-# ESP32-S3-BOX-3 (dock / PMOD2) build defaults for wireless-esp32-dap
+# ESP32-S3-DevKitC-1 (N16R8) build defaults for wireless-esp32-dap
 #
-# Target : ESP32-S3 (QFN56, 240 MHz, 16 MB flash)
-# SWD    : SWDIO = GPIO11 (PMOD2 IO7, FSPID)
-#          SWCLK = GPIO12 (PMOD2 IO3, FSPICLK)
-#          nRESET= GPIO13 (PMOD2 IO1)
+# Target : ESP32-S3 (QFN56, 240 MHz, 16 MB flash, 8 MB PSRAM - PSRAM disabled)
+# SWD    : SWDIO = GPIO11 (FSPID)  - header pin IO11
+#          SWCLK = GPIO12 (FSPICLK)- header pin IO12
+#          nRESET= GPIO13          - header pin IO13, open-drain
 #
-# Note: do NOT use GPIO19/20 (native USB) and avoid GPIO43/44 (UART0 / PMOD2 IO4,IO8).
+# Note: GPIO43/44 are the UART0 console (the CH343 port used for flashing).
+#       GPIO19/20 are the native USB pins - leave them alone.
 
 CONFIG_IDF_TARGET="esp32s3"
 
@@ -23,8 +24,8 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions_singleapp_large.csv"
 # ---- Console -----------------------------------------------------------
 # Native USB-Serial/JTAG: keeps GPIO43/44 free and matches the USB port
 # the board is flashed through (COM3).
-CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
-CONFIG_ESP_CONSOLE_UART_DEFAULT=n
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=115200
 CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 
 # ---- CPU / optimisation ------------------------------------------------

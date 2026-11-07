@@ -5,8 +5,11 @@
 | 分支 | 对应硬件 | 说明 |
 |---|---|---|
 | `main` | —（共用基线） | 与硬件无关的改动（协议栈、工具脚本、文档）先落这里 |
-| **`S3Box`** | Waveshare **ESP32-S3-BOX-3 + Dock** | 已实测的硬件适配，引脚 SWDIO=GPIO11 / SWCLK=GPIO12 / nRESET=GPIO13 |
-| `DevKitC1`（计划） | Espressif **ESP32-S3-DevKitC-1** | 硬件到货后从 `main` 新建，主要改 `DAP_config.h` 的引脚宏 + sdkconfig 的 Flash 容量 |
+| `S3Box` | Espressif **ESP32-S3-BOX-3 + Dock** | 已实测；额外带板载 2.4" LCD 状态屏 |
+| **`DevKitC1`**（当前） | Espressif **ESP32-S3-DevKitC-1（N16R8）** | 从 `S3Box` 拉出以继承已调通的代码；关掉屏幕、console 改 UART0，SWD 引脚不变 |
+
+> `DevKitC1` 从 `S3Box` 而不是 `main` 拉出，是为了直接继承 reset 修复、工具脚本等已在真机验证过的改动。
+> 如果以后要把 `main` 作为纯净基线，可以把 `DevKitC1` 上的硬件无关提交挑回 `main`。
 
 > 换板子要改哪些位置，见 [docs/移植说明.md](docs/移植说明.md) §3。
 
@@ -148,28 +151,33 @@ I (36980) esp_netif_lwip: DHCP server assigned IP to a client, IP is: 192.168.4.
 
 ---
 
-## 2. 硬件接线（dock 的 PMOD2 排针）
+## 2. 硬件接线（DevKitC-1 排针）
 
-| 信号 | PMOD2 引脚 | GPIO | 说明 |
+本分支（`DevKitC1`）目标板是 **ESP32-S3-DevKitC-1（N16R8）**，SWD 引三根线到排针即可：
+
+| 信号 | 板上的位置 | GPIO | 说明 |
 |---|---|---|---|
-| **SWDIO** | IO7 | **GPIO11** | S3 的 `FSPID`，可用 IO_MUX 直连 SPI |
-| **SWCLK** | IO3 | **GPIO12** | S3 的 `FSPICLK` |
-| **nRESET** | IO1 | **GPIO13** | 开漏输出 + 内部上拉 |
-| GND | GND | — | **必须与目标板共地** |
-| 3V3 | 3V3 | — | 给目标板供电（3.3 V）|
+| **SWDIO** | 排针 IO11 | **GPIO11** | S3 的 `FSPID` |
+| **SWCLK** | 排针 IO12 | **GPIO12** | S3 的 `FSPICLK` |
+| **nRESET**（可选） | 排针 IO13 | **GPIO13** | 开漏输出 + 内部上拉，接目标板 NRST |
+| GND | 排针 GND | — | **必须与目标板共地** |
 
-> **接电前务必用万用表确认 3V3 和 GND 的位置**。F103 最小系统板的 3V3/GND 丝印相邻，
-> 接反等于给目标板的 VDD 加 −3.3 V，会直接击穿芯片（本项目开发过程中已烧掉一块）。
-> 更稳妥的做法是让目标板自己用 USB 供电，只连 SWDIO / SWCLK / GND 三根信号线。
+> **接电前务必确认 3V3 和 GND**。开发过程中曾因接反烧掉一块 F103。
+> 稳妥做法是目标板自己 USB 供电，只连 SWDIO / SWCLK / GND（需要硬件复位时再接 nRESET）。
 
-> 之前的接法（IO13=SWDIO、IO10=CLK）已废弃：GPIO10/13 在 S3 上不是 SPI 的时钟/数据
-> IO_MUX 引脚，40 MHz 加速会退化。改用 IO7/IO3 后两个信号都落在 IO_MUX 直连脚上。
->
-> 注意：GPIO13 同时是 SD 卡的 D1，请**不要插 SD 卡**。GPIO43/44 是 UART0（PMOD2 IO8/IO4），
-> 也不要占用。
+**DevKitC-1 比 BOX-3 省心的地方**：
 
-JTAG **没有**接线（TDI/TDO/nTRST 被分配到 PMOD2 上未使用的 IO2/IO5/IO6 只是为了保持代码可编译），
-SWD 是默认调试口。
+- GPIO11/12/13 全在排针上，直接可接
+- **GPIO13 不再和 SD 卡冲突**（BOX-3 上它是 SD_D1，插卡会干扰复位）
+- 板子自带两个 USB 口，烧录用 UART 口（CH343，有自动复位），不用手动按 BOOT
+
+**要注意的**：
+
+- 本板没屏，`USE_BOX3_DISPLAY` 已置 0（`main/dap_configuration.h`）
+- console 改到 **UART0（GPIO43/44）**，日志从烧录那个口直接看；别把 GPIO43/44 挪作他用
+- PSRAM 保持关闭（和 BOX-3 一致），不影响功能
+
+JTAG **没有**接线（TDI/TDO/nTRST 只是保持代码可编译），SWD 是默认调试口。
 
 ---
 
@@ -179,8 +187,8 @@ SWD 是默认调试口。
 # 已提供封装脚本（内部设置 IDF_PATH / IDF_TOOLS_PATH / IDF_PYTHON_ENV_PATH）
 .\build.ps1 set-target esp32s3
 .\build.ps1 build
-.\build.ps1 -p COM3 flash
-.\build.ps1 -p COM3 monitor
+.\build.ps1 -p COM13 flash
+.\build.ps1 -p COM13 monitor
 ```
 
 环境前提（本机已就绪）：
