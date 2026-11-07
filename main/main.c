@@ -19,6 +19,7 @@
 #include "main/wifi_configuration.h"
 #include "main/wifi_handle.h"
 #include "main/display.h"
+#include "main/rgb_led.h"
 #include "main/dap_configuration.h"
 
 #if (USE_OTA == 1)
@@ -103,6 +104,14 @@ void app_main() {
 
 #if (USE_UART_BRIDGE == 1)
     uart_bridge_init();
+#endif
+
+#if (USE_BOARD_RGB_LED == 1)
+    // 板载三色灯：没屏幕的板子上它就是唯一的现场指示器。
+    // 失败不影响主功能。
+    if (rgb_led_init() != ESP_OK) {
+        ESP_LOGW("main", "status LED init failed, continue without it");
+    }
 #endif
 
 #if (USE_BOX3_DISPLAY == 1)

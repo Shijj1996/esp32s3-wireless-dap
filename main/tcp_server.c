@@ -38,6 +38,12 @@ uint8_t kState = ACCEPTING;
 int kSock = -1;
 
 /*
+ * 每收到一条 CMD_SUBMIT 就自增。板载状态灯用它判断链路是否真的在传数据：
+ * 差值 > 0 就是"正在调试"，短时间内没变化就是"已连接但空闲"。
+ */
+volatile uint32_t g_usbip_cmd_count = 0;
+
+/*
  * USBIP over TCP is a byte stream: one recv() may deliver a partial stage2
  * packet, or several packets at once. The original code handed every recv()
  * straight to emulate(), which breaks as soon as a header and its payload

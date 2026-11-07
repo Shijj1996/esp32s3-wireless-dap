@@ -32,6 +32,15 @@
 
 
 /**
+ * @brief 板载三色状态灯（WS2812 / 可寻址 RGB）
+ *
+ *        DevKitC-1 板上那颗 RGB LED，用来显示 Wi-Fi / 挂载 / 传输状态。
+ *        详见 docs/状态灯说明.md。
+ */
+#define USE_BOARD_RGB_LED   1
+#define BOARD_RGB_LED_GPIO  48
+
+/**
  * @brief 板载 LCD 状态屏（仅 ESP32-S3-BOX-3 有：2.4" 320x240 ILI9341）
  *
  *        本分支目标板是 ESP32-S3-DevKitC-1，**没有屏幕**，所以关掉：

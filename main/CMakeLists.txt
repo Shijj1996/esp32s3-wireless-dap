@@ -9,6 +9,7 @@ idf_component_register(
         "tcp_netconn.c"
         "uart_bridge.c"
         "wifi_handle.c"
+        "rgb_led.c"
         "display.c"
         "font_pingfang14.c"
     INCLUDE_DIRS "."
@@ -22,4 +23,5 @@ idf_component_register(
         driver
         esp_lcd
         esp_lcd_ili9341
+        led_strip
 )

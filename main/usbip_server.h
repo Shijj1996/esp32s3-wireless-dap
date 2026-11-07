@@ -15,6 +15,9 @@ enum state_t
 extern uint8_t kState;
 extern int kSock;
 
+/* 累计收到的 CMD_SUBMIT 数量，供板载状态灯判断链路是否在传数据 */
+extern volatile uint32_t g_usbip_cmd_count;
+
 int attach(uint8_t *buffer, uint32_t length);
 int emulate(uint8_t *buffer, uint32_t length);
 void send_stage2_submit_data(usbip_stage2_header *req_header, int32_t status, const void * const data, int32_t data_length);

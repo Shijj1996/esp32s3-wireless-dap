@@ -287,6 +287,8 @@ static void unpack(void *data, int size)
  */
 static int handle_submit(usbip_stage2_header *header, uint32_t length)
 {
+    g_usbip_cmd_count++;    // 状态灯据此判断"正在传数据"
+
     switch (header->base.ep)
     {
     // control endpoint(endpoint 0)
