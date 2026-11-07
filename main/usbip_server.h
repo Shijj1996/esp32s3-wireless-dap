@@ -17,6 +17,10 @@ extern int kSock;
 
 /* 累计收到的 CMD_SUBMIT 数量，供板载状态灯判断链路是否在传数据 */
 extern volatile uint32_t g_usbip_cmd_count;
+/* Wi-Fi 断开时置 1，TCP 循环据此丢弃当前客户端连接 */
+extern volatile int kForceCloseClient;
+/* Wi-Fi 掉线时置 1，TCP 任务据此重建监听 socket */
+extern volatile int kRestartServer;
 
 int attach(uint8_t *buffer, uint32_t length);
 int emulate(uint8_t *buffer, uint32_t length);

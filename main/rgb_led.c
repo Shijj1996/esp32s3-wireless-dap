@@ -63,12 +63,21 @@ static void rgb_led_task(void *arg)
     uint32_t tick = 0;
     uint32_t last_cmd_count = g_usbip_cmd_count;
     uint32_t last_active_tick = 0;
+    int last_state = -1;
 
     for (;;) {
         wifi_ap_record_t ap;
         bool wifi_ok = (esp_wifi_sta_get_ap_info(&ap) == ESP_OK);
 
         uint8_t r = 0, g = 0, b = 0;
+
+        /* 状态变化时打一条日志：不用看灯也能从串口确认状态机对不对 */
+        int state = (!wifi_ok) ? 0 : (kSock < 0 ? 1 : 2);
+        if (state != last_state) {
+            static const char *names[] = { "NO_WIFI(red blink)", "WAITING(blue breath)", "ATTACHED(green)" };
+            ESP_LOGI(TAG, "state -> %s  (kSock=%d)", names[state], kSock);
+            last_state = state;
+        }
 
         if (!wifi_ok) {
             /* 红闪 —— 找不到热点 / 没连上 */

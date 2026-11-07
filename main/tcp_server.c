@@ -43,6 +43,13 @@ int kSock = -1;
  */
 volatile uint32_t g_usbip_cmd_count = 0;
 
+/* Wi-Fi 断开时置 1：让 TCP 循环把当前客户端关掉，回到 accept。
+ * 不做这一步的话，掉线后 kSock 一直 >= 0，状态灯会永远显示"已挂载"。 */
+volatile int kForceCloseClient = 0;
+
+/* Wi-Fi 掉线时置 1：让 TCP 任务连监听 socket 一起重建（旧 socket 绑在失效地址上） */
+volatile int kRestartServer = 0;
+
 /*
  * USBIP over TCP is a byte stream: one recv() may deliver a partial stage2
  * packet, or several packets at once. The original code handed every recv()
@@ -152,8 +159,11 @@ void tcp_server_task(void *pvParameters)
         int listen_sock = socket(addr_family, SOCK_STREAM, ip_protocol);
         if (listen_sock < 0)
         {
-            os_printf("Unable to create socket: errno %d\r\n", errno);
-            break;
+            /* 不能 break：任务退出后 Wi-Fi 恢复也不会再起来（这正是
+             * "ping 通但 3240 没人听" 的根因）。等一会儿重试即可。 */
+            os_printf("Unable to create socket: errno %d, retry in 1s\r\n", errno);
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
         os_printf("Socket created\r\n");
 
@@ -163,16 +173,22 @@ void tcp_server_task(void *pvParameters)
         int err = bind(listen_sock, (struct sockaddr *)&destAddr, sizeof(destAddr));
         if (err != 0)
         {
-            os_printf("Socket unable to bind: errno %d\r\n", errno);
-            break;
+            os_printf("Socket unable to bind: errno %d, retry in 1s\r\n", errno);
+            close(listen_sock);
+            listen_sock = -1;
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
         os_printf("Socket binded\r\n");
 
         err = listen(listen_sock, 1);
         if (err != 0)
         {
-            os_printf("Error occured during listen: errno %d\r\n", errno);
-            break;
+            os_printf("Error occured during listen: errno %d, retry in 1s\r\n", errno);
+            close(listen_sock);
+            listen_sock = -1;
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            continue;
         }
         os_printf("Socket listening\r\n");
 
@@ -184,6 +200,33 @@ void tcp_server_task(void *pvParameters)
         uint32_t addrLen = sizeof(sourceAddr);
         while (1)
         {
+            /* Wi-Fi 掉过线：旧 listen socket 已经绑在失效的地址上，
+             * 重建整个监听 socket。 */
+            if (kRestartServer) {
+                os_printf("wifi down, rebuilding listener\r\n");
+                break;
+            }
+
+            /* 用 select 等新连接（200ms 超时），不要阻塞在 accept() 里：
+             * 否则没有客户端时，Wi-Fi 掉线也永远醒不过来。 */
+            fd_set lrfds;
+            FD_ZERO(&lrfds);
+            FD_SET(listen_sock, &lrfds);
+            struct timeval ltv;
+            ltv.tv_sec  = 0;
+            ltv.tv_usec = 200 * 1000;
+
+            int lready = select(listen_sock + 1, &lrfds, NULL, NULL, &ltv);
+            if (lready < 0)
+            {
+                os_printf("listen select failed: errno %d\r\n", errno);
+                break;
+            }
+            if (lready == 0)
+            {
+                continue;   // 超时，回去检查标志
+            }
+
             kSock = accept(listen_sock, (struct sockaddr *)&sourceAddr, &addrLen);
             if (kSock < 0)
             {
@@ -194,8 +237,22 @@ void tcp_server_task(void *pvParameters)
             setsockopt(kSock, IPPROTO_TCP, TCP_NODELAY, (void *)&on, sizeof(on));
             os_printf("Socket accepted\r\n");
 
+            /* 新连接建立：清掉上一轮 Wi-Fi 掉线留下的关闭请求，
+             * 否则刚接受的这个连接会被立刻踢掉。 */
+            kForceCloseClient = 0;
+
+            // 用来检测"连上了但一直不发 attach 请求"的死连接
+            TickType_t last_rx = xTaskGetTickCount();
+
             while (1)
             {
+                // Wi-Fi 掉了这条 TCP 已经不可能再工作，主动关掉回到 accept。
+                // 不处理的话 kSock 会一直"看起来还连着"，状态灯也一直是绿色。
+                if (kForceCloseClient) {
+                    kForceCloseClient = 0;
+                    os_printf("wifi down, dropping client\r\n");
+                    break;
+                }
                 // Wake up regularly so a parked bulk-IN read can be answered as
                 // soon as the DAP thread produced its response, instead of
                 // blocking here and deadlocking the host's next transfer.
@@ -217,6 +274,14 @@ void tcp_server_task(void *pvParameters)
 
                 if (ready == 0)
                 {
+                    // 连接建立了却一直没发 attach 请求：多半是客户端超时后
+                    // 留下的半开连接。它会一直占着 accept，导致真正的 attach
+                    // 排在 backlog 里等 20 秒才被处理（现象：挂载后灯很久才变绿）。
+                    if (kState == ATTACHING &&
+                        (xTaskGetTickCount() - last_rx) > pdMS_TO_TICKS(5000)) {
+                        os_printf("stale connection (no attach request in 5s), dropping\r\n");
+                        break;
+                    }
                     continue; // nothing to read, just serviced pending reads
                 }
 
@@ -236,6 +301,7 @@ void tcp_server_task(void *pvParameters)
                 // Data received
                 else
                 {
+                    last_rx = xTaskGetTickCount();
                     // #ifdef CONFIG_EXAMPLE_IPV6
                     //                     // Get the sender's ip address as string
                     //                     if (sourceAddr.sin6_family == PF_INET)
@@ -286,8 +352,9 @@ void tcp_server_task(void *pvParameters)
                 os_printf("Shutting down socket and restarting...\r\n");
                 //shutdown(kSock, 0);
                 close(kSock);
-                if (kState == EMULATING || kState == EL_DATA_PHASE)
-                    kState = ACCEPTING;
+                // 必须复位：否则"有没有客户端"的判断（含状态灯）一直是旧的
+                kSock  = -1;
+                kState = ACCEPTING;
 
                 // Restart DAP Handle
                 el_process_buffer_free();
@@ -301,6 +368,18 @@ void tcp_server_task(void *pvParameters)
                 //close(listen_sock);
                 //vTaskDelay(5);
             }
+        }
+
+        /* 离开 accept 循环：必须关掉监听 socket，否则每次重建都泄漏一个 fd
+         * （LWIP_MAX_SOCKETS 只有 10 个，泄漏几次就再也建不出来了）。 */
+        close(listen_sock);
+        listen_sock = -1;
+
+        if (kRestartServer) {
+            kRestartServer    = 0;
+            kForceCloseClient = 0;
+            os_printf("listener will be rebuilt after wifi recovery\r\n");
+            vTaskDelay(pdMS_TO_TICKS(500));   // 给 Wi-Fi 一点时间重新拿 IP
         }
     }
     vTaskDelete(NULL);

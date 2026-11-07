@@ -19,6 +19,7 @@
 
 #include "main/wifi_configuration.h"
 #include "main/wifi_handle.h"
+#include "main/usbip_server.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -146,6 +147,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t base,
 
             ESP_LOGW(TAG, "disconnected (reason %d), retrying", e->reason);
             xEventGroupClearBits(wifi_event_group, WIFI_READY_BIT);
+
+            /* Wi-Fi 断了，原来的 TCP 连接不可能再恢复：请求 TCP 循环把它关掉。
+             * 否则 kSock 会一直 >= 0 —— 状态灯永远显示"已挂载"，
+             * 重新连上热点后也不会回到"等待挂载"。
+             *
+             * 注意这里**不需要**重建监听 socket：它绑的是 INADDR_ANY，
+             * Wi-Fi 恢复拿到 IP 后照样能用。如果掉线期间 select/accept 真报错，
+             * TCP 任务会自己重建（那条路径有 1 秒重试，不会退出）。 */
+            kForceCloseClient = 1;
 
             /* reason 201 = NO_AP_FOUND: dump what the radio can actually see.
              * A 5 GHz or ch12/13 hotspot is the usual cause. */
